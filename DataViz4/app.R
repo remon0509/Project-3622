@@ -2,7 +2,8 @@
 library(shiny)
 library(leaflet)
 library(tidyverse)
-
+library(ggplot2)
+library(plotly)
 
 #Loading Dataframe
 
@@ -21,12 +22,85 @@ yr2009<-subset(df2,Year==2009)
 tdata<-rbind(yr2014,yr2013,yr2012,yr2011,yr2010,yr2009)%>%
     mutate(Date1=as.Date(Date,"%d/%m/%Y"))%>%
     transform(Date=as.Date(Date,"%d/%m/%Y"))%>%
-    transform(Accident_Severity=cut(Accident_Severity,3,labels=c("Fatal","Serious","Slight")))%>%
-    transform(Urban_or_Rural_Area=cut(Urban_or_Rural_Area,2,labels=c("Urban","Rural")))
+    transform(Urban_or_Rural_Area=cut(Urban_or_Rural_Area,2,labels=c("Urban","Rural")))%>%
+    mutate(Hour=floor(as.numeric(gsub(":","",Time))/100))%>%
+    mutate(Hour_Range=cut(Hour+1,breaks=c(0,3,6,9,12,15,18,21,24),
+                          labels=c("Midnight to 2:59 a.m.",
+                                   "3 a.m. to 5:59 a.m.",
+                                   "6 a.m. to 8:59 a.m.",
+                                   "9 a.m. to 11:59 a.m.",
+                                   "Noon to 2:59 p.m.",
+                                   "3 p.m. to 5:59 p.m.",
+                                   "6 p.m. to 8:59 p.m.",
+                                   "9 p.m. to 11:59 p.m."),
+                          include.lowest=TRUE))
 
 tdata$Date1<-format(as.Date(tdata$Date1),"%Y-%m")%>%
     paste(rep(c("-01"),nrow(tdata)),sep='')%>%
     as.Date(format="%Y-%m-%d")
+
+
+tmp<-tdata[,c("Hour_Range","Day_of_Week","Accident_Severity")]
+tmp$Day_of_Week<-cut(tmp$Day_of_Week,breaks=c(0,1,2,3,4,5,6,7),
+                     labels=c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"))
+
+tmp1<-filter(tmp,Accident_Severity==1)
+tmp1<-aggregate(x=tmp1$Accident_Severity,
+                by=tmp1[c("Hour_Range","Day_of_Week")],FUN=sum)
+tmp2<-filter(tmp,Accident_Severity==2)
+tmp2<-aggregate(x=(tmp2$Accident_Severity)/2,
+                by=tmp2[c("Hour_Range","Day_of_Week")],FUN=sum)
+tmp3<-filter(tmp,Accident_Severity==3)
+tmp3<-aggregate(x=(tmp3$Accident_Severity)/3,
+                by=tmp3[c("Hour_Range","Day_of_Week")],FUN=sum)
+
+colnames(tmp1)<-c("Hour_Range" ,"Day_of_Week","Fatal")
+colnames(tmp2)<-c("Hour_Range" ,"Day_of_Week","Serious")
+colnames(tmp3)<-c("Hour_Range" ,"Day_of_Week","Slight")
+
+tmpX<-merge(tmp1,tmp2)
+tmpX<-merge(tmpX,tmp3)%>%
+    mutate(FStoS_Ratio=(Fatal+Serious)/Slight)%>%
+    mutate(Fatal_Rate=Fatal/(Fatal+Serious+Slight))
+
+########
+########
+
+tmpfun<-function(num_col){
+    tmp<-tdata[,c(num_col,7)]
+    tmp1<-filter(tmp,Accident_Severity==1)
+    tmp1<-aggregate(x=tmp1$Accident_Severity,
+                    by=tmp1[c(names(tdata)[num_col])],FUN=sum)
+    tmp2<-filter(tmp,Accident_Severity==2)
+    tmp2<-aggregate(x=(tmp2$Accident_Severity)/2,
+                    by=tmp2[c(names(tdata)[num_col])],FUN=sum)
+    tmp3<-filter(tmp,Accident_Severity==3)
+    tmp3<-aggregate(x=(tmp3$Accident_Severity)/3,
+                    by=tmp3[c(names(tdata)[num_col])],FUN=sum)
+    
+    colnames(tmp1)<-c(names(tdata)[num_col],"Fatal")
+    colnames(tmp2)<-c(names(tdata)[num_col],"Serious")
+    colnames(tmp3)<-c(names(tdata)[num_col],"Slight")
+    
+    tmpX<-merge(tmp1,tmp2)
+    tmpX<-merge(tmpX,tmp3)%>%
+        mutate(FStoS_Ratio=(Fatal+Serious)/Slight)%>%
+        mutate(Fatal_Rate=Fatal/(Fatal+Serious+Slight))
+    
+    return(tmpX)
+}
+
+
+tmpASRT<-tmpfun(17)
+tmpASPCF<-tmpfun(24)
+tmpASLC<-tmpfun(25)
+tmpASWC<-tmpfun(26)
+tmpASRSC<-tmpfun(27)
+tmpASUR<-tmpfun(30)
+noplot<-tmpfun(7)
+
+######
+tdata<-transform(tdata,Accident_Severity=cut(Accident_Severity,3,labels=c("Fatal","Serious","Slight")))
 
 ##GeoJSON raw data of UK admin regions##
 # library(geojson)
@@ -51,22 +125,34 @@ ui <- bootstrapPage(
     
     leafletOutput("map", width="100%", height="100%"),
     
+    absolutePanel(
+        id = "controls", class = "panel panel-default",
+        top=10, right=10, width=550, fixed=TRUE,
+        draggable=TRUE, height="auto",
+
+        plotOutput("tree", height="300px", width="100%"),
+        
+        plotlyOutput("bar", height="400px", width="100%")
+
+        ),
+    
     
     absolutePanel(
         id = "controls", class = "panel panel-default",
-        top = 120, left = 20, width = 250, fixed=TRUE,
+        top = 100, left = 20, width = 350, fixed=TRUE,
         draggable = TRUE, height = "auto",
         
         tabsetPanel(
             
             
             
-            tabPanel("1",
+            tabPanel("Main",
                      
                      
                      sliderInput("date1",label="",
                                  min=as.Date("2009-01-01"),max=as.Date("2014-12-01"),
-                                 value=as.Date("2014-12-01"),timeFormat="%b %Y"),
+                                 value=as.Date("2014-12-01"),timeFormat="%b %Y",
+                                 animate=animationOptions(interval=50,loop=TRUE)),
                      
                      selectInput("radius",
                                  label="Size by:", choices=list("Number of Casualties"=TRUE,
@@ -80,7 +166,8 @@ ui <- bootstrapPage(
                                                                   "Road Type"=17,
                                                                   "Road Surface Conditions"=27,
                                                                   "Area"=30),
-                                 selected=7)
+                                 selected=17),
+                     h4(textOutput("num_accidents"), align = "left")
 
                      # selectInput("year",
                      #             label="Year", choices=list("2014"=2014,"2013"=2013,
@@ -99,7 +186,7 @@ ui <- bootstrapPage(
             ),
             
             
-            tabPanel("2",
+            tabPanel("More",
                      
                      
                      #More setting checkbox
@@ -171,7 +258,7 @@ ui <- bootstrapPage(
             ),
                      
                      
-            tabPanel("3",
+            tabPanel("More",
                      
                      
                      #Checkbox group for Road Type
@@ -408,6 +495,55 @@ server <- function(input, output) {
                       values=~dataFilter()[,as.numeric(input$colour)],
                       opacity=0.6,
                       title="")
+    })
+    
+    output$num_accidents<-renderText({
+        paste0( "Number of Accidents: ",prettyNum(length(dataFilter()$Longitude), big.mark=","))
+    })
+    
+    
+    output$tree<-renderPlot(
+        ggplot(tmpX, aes(area=FStoS_Ratio, fill=Hour_Range,label=Day_of_Week,
+                         subgroup=Hour_Range))+
+            geom_treemap()+
+            geom_treemap_subgroup_border()+
+            geom_treemap_subgroup_text(place="bottom", grow=T, alpha=1,colour="white", min.size = 0)+
+            geom_treemap_text(colour="black", place="topleft", reflow=T)+
+            ggtitle("Fatal and Serious to Slight Accidents Ratio by Time of the Day")
+    )
+    
+
+    index<-reactiveValues()
+    
+    observe({
+        if(input$colour==17){
+            index$df<-tmpASRT
+        }
+        else if(input$colour==24){
+            index$df<-tmpASPCF
+        }
+        else if(input$colour==25){
+            index$df<-tmpASLC
+        }
+        else if(input$colour==26){
+            index$df<-tmpASWC
+        }
+        else if(input$colour==27){
+            index$df<-tmpASRSC
+        }
+        else if(input$colour==30){
+            index$df<-tmpASUR
+        }
+        else if(input$colour==7){
+            index$df<-noplot
+        }
+    })
+    
+    output$bar<-renderPlotly({
+        plot_ly(data=index$df, x=index$df[,1], y=~Fatal,type='bar', name='Fatal')%>%
+            add_trace(y = ~Serious, name = 'Serious')%>%
+            add_trace(y = ~Slight, name = 'Slight')%>%
+            layout(yaxis=list(title='Count'), barmode='group')
     })
     
 }
