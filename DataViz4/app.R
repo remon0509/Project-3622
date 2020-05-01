@@ -4,11 +4,16 @@ library(leaflet)
 library(tidyverse)
 library(ggplot2)
 library(plotly)
+library(forecast)
+library(treemapify)
 
 #Loading Dataframe
 
 df1<-read.csv('data/accidents_2012_to_2014.csv',header=TRUE)
 df2<-read.csv('data/accidents_2009_to_2011.csv',header=TRUE)
+city<-read.csv('data/ukCity.csv',header=TRUE)
+
+
 
 #Subetting by year
 yr2014<-subset(df1,Year==2014)
@@ -101,10 +106,33 @@ noplot<-tmpfun(7)
 
 ######
 tdata<-transform(tdata,Accident_Severity=cut(Accident_Severity,3,labels=c("Fatal","Serious","Slight")))
+######
 
-##GeoJSON raw data of UK admin regions##
-# library(geojson)
-# GeoData<-geojsonio::geojson_read("https://raw.githubusercontent.com/martinjc/UK-GeoJSON/master/json/administrative/gb/lad.json", what = "sp")
+#Holt Winter Mul Seasonal Forecast
+uk<-tdata[,c(33,34)]%>%
+    mutate(count=rep(1,nrow(tdata)))
+uk<-aggregate(x=uk$count,
+              by=uk[c("Year","Date1")],FUN=sum)
+colnames(uk)<-c("Year","Date","Count")
+
+
+ts.uk<-ts(data=uk[,"Count"],frequency=12,start=c(2009,1))
+
+fit<-hw(y=ts.uk,seasonal="mul",h=12,initial="simple")
+r2<-1-fit$model$SSE/sum((fit$x-mean(fit$x))^2)
+
+fit_for<-forecast(fit, h=12)
+dates<-seq(uk$Date[72], by=uk$Date[72]-uk$Date[71], len=12)
+
+
+
+
+icons<-awesomeIcons(
+    icon='pin',
+    iconColor="red",
+    library="ion",
+    markerColor="white"
+)
 
 monthStart<-function(x){
     x<-as.POSIXlt(x)
@@ -129,12 +157,20 @@ ui <- bootstrapPage(
         id = "controls", class = "panel panel-default",
         top=10, right=10, width=550, fixed=TRUE,
         draggable=TRUE, height="auto",
-
-        plotOutput("tree", height="300px", width="100%"),
         
-        plotlyOutput("bar", height="400px", width="100%")
-
+        tabsetPanel(
+            tabPanel("Plot",
+                     plotOutput("tree", height="300px", width="100%"),
+                     plotlyOutput("bar", height="400px", width="100%")
+                     ),
+            
+            tabPanel("Forecast",
+                     plotlyOutput("forecast", height='400px', width="100%")
+                     )
+            )
         ),
+    
+
     
     
     absolutePanel(
@@ -480,6 +516,7 @@ server <- function(input, output) {
             clearMarkers()%>%
             clearMarkerClusters()%>%
             clearControls()%>%
+            addAwesomeMarkers(data=city,icon=icons,label=as.character(city$City))%>%
             # addCircleMarkers(stroke=FALSE,
             #                  fillOpacity = 0.15,
             #                          color =~pal(Accident_Severity),
@@ -544,6 +581,25 @@ server <- function(input, output) {
             add_trace(y = ~Serious, name = 'Serious')%>%
             add_trace(y = ~Slight, name = 'Slight')%>%
             layout(yaxis=list(title='Count'), barmode='group')
+    })
+    
+    output$forecast<-renderPlotly({
+        plot_ly() %>%
+            add_lines(x=uk$Date, y=uk$Count,
+                      color=I("black"),
+                      name="observed",
+                      marker=list(mode="lines"))%>%
+            add_lines(x=dates, y=fit_for$mean, color = I("Blue"), name = "prediction") %>%
+            add_ribbons(x = dates,
+                        ymin = fit_for$lower[, 2],
+                        ymax = fit_for$upper[, 2],
+                        color = I("gray95"),
+                        name = "95% confidence") %>%
+            add_ribbons(p,
+                        x = dates,
+                        ymin = fit_for$lower[, 1],
+                        ymax = fit_for$upper[, 1],
+                        color = I("gray80"), name = "80% confidence")
     })
     
 }
