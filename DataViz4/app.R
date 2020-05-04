@@ -108,6 +108,28 @@ noplot<-tmpfun(7)
 tdata<-transform(tdata,Accident_Severity=cut(Accident_Severity,3,labels=c("Fatal","Serious","Slight")))
 ######
 
+
+#hist 1
+tmphist1<-tdata[,c("Day_of_Week","Hour")]
+
+hist1<-ggplot(data=tmphist1,aes(x=Day_of_Week))+ 
+    geom_histogram(binwidth=1,alpha=0.3,color="red",fill="red")+
+    scale_x_continuous(name=c("Day of Week"),
+                       breaks=c(1,2,3,4,5,6,7),
+                       labels=c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"))+
+    theme(axis.text.x=element_text(angle=45, hjust=1,size=8))
+
+hist2<-ggplot(data=tmphist1,aes(x=Hour))+ 
+    geom_histogram(binwidth=1,alpha=0.3,color="blue",fill="blue")+
+    scale_x_continuous(name=c("Time"),
+                       breaks=seq(0:23)-1,
+                       labels=c("12 a.m.","1 a.m.","2 a.m.","3 a.m.","4 a.m.","5 a.m.",
+                                "6 a.m.","7 a.m.","8 a.m.","9 a.m.","10 a.m.","11 a.m.",
+                                "12 p.m.","1 p.m.","2 p.m.","3 p.m.","4 p.m.","5 p.m.",
+                                "6 p.m.","7 p.m.","8 p.m.","9 p.m.","10 p.m.","11 p.m."))+
+    theme(axis.text.x=element_text(angle=45, hjust=1,size=8))
+
+
 #Holt Winter Mul Seasonal Forecast
 uk<-tdata[,c(33,34)]%>%
     mutate(count=rep(1,nrow(tdata)))
@@ -155,7 +177,7 @@ ui <- bootstrapPage(
     
     absolutePanel(
         id = "controls", class = "panel panel-default",
-        top=10, right=10, width=550, fixed=TRUE,
+        top=5, right=10, width=550, fixed=TRUE,
         draggable=TRUE, height="auto",
         
         tabsetPanel(
@@ -166,16 +188,29 @@ ui <- bootstrapPage(
             
             tabPanel("Forecast",
                      plotlyOutput("forecast", height='400px', width="100%")
-                     )
-            )
-        ),
+                     ),
+            
+            tabPanel("More",
+                     tabsetPanel(
+                         tabPanel("Total",
+                             h5(textOutput("from"), align = "center"),
+                             plotlyOutput("hist1", height='350px', width="100%"),
+                             plotlyOutput("hist2", height='350px', width="100%")
+                             ),
+                         tabPanel("More",
+                             plotlyOutput("hist3", height='350px', width="100%"),
+                             plotlyOutput("hist4", height='350px', width="100%")
+                             )
+                     ) 
+                   ))
+            ),
     
 
     
     
     absolutePanel(
         id = "controls", class = "panel panel-default",
-        top = 100, left = 20, width = 350, fixed=TRUE,
+        top = 100, left = 20, width = 380, fixed=TRUE,
         draggable = TRUE, height = "auto",
         
         tabsetPanel(
@@ -183,7 +218,7 @@ ui <- bootstrapPage(
             
             
             tabPanel("Main",
-                     
+                     h3(textOutput("title"), align = "left"),
                      
                      sliderInput("date1",label="",
                                  min=as.Date("2009-01-01"),max=as.Date("2014-12-01"),
@@ -532,6 +567,12 @@ server <- function(input, output) {
                       values=~dataFilter()[,as.numeric(input$colour)],
                       opacity=0.6,
                       title="")
+
+ 
+    })
+    
+    output$title<-renderText({
+        paste0( "UK Traffic Accidents")
     })
     
     output$num_accidents<-renderText({
@@ -582,6 +623,53 @@ server <- function(input, output) {
             add_trace(y = ~Slight, name = 'Slight')%>%
             layout(yaxis=list(title='Count'), barmode='group')
     })
+    
+    output$from<-renderText({
+        paste0( "From 2009 to 2016")
+    })
+    
+    output$hist1<-renderPlotly({
+        ggplotly(hist1)
+    })
+    
+    output$hist2<-renderPlotly({
+        ggplotly(hist2)
+    })
+    
+    
+    hist<-reactiveValues()
+    
+    observe({
+        tmphist2<-dataFilter()[,c("Day_of_Week","Hour")]
+        
+        hist$plot2_1<-ggplot(data=tmphist2,aes(x=Day_of_Week))+ 
+            geom_histogram(binwidth=1,alpha=0.3,color="purple",fill="purple")+
+            scale_x_continuous(name=c("Day of Week"),
+                               breaks=c(1,2,3,4,5,6,7),
+                               labels=c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"))+
+            theme(axis.text.x=element_text(angle=45, hjust=1,size=8))
+        
+        hist$plot2_2<-ggplot(data=tmphist2,aes(x=Hour))+ 
+            geom_histogram(binwidth=1,alpha=0.3,color="orange",fill="orange")+
+            scale_x_continuous(name=c("Time"),
+                               breaks=seq(0:23)-1,
+                               labels=c("12 a.m.","1 a.m.","2 a.m.","3 a.m.","4 a.m.","5 a.m.",
+                                        "6 a.m.","7 a.m.","8 a.m.","9 a.m.","10 a.m.","11 a.m.",
+                                        "12 p.m.","1 p.m.","2 p.m.","3 p.m.","4 p.m.","5 p.m.",
+                                        "6 p.m.","7 p.m.","8 p.m.","9 p.m.","10 p.m.","11 p.m."))+
+            theme(axis.text.x=element_text(angle=45, hjust=1,size=8))
+    })
+    
+    
+    output$hist3<-renderPlotly({
+        ggplotly(hist$plot2_1)
+    })
+    
+    output$hist4<-renderPlotly({
+        ggplotly(hist$plot2_2)
+    })
+    
+    
     
     output$forecast<-renderPlotly({
         plot_ly() %>%
