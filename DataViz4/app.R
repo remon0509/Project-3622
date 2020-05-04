@@ -625,7 +625,7 @@ server <- function(input, output) {
     })
     
     output$from<-renderText({
-        paste0( "From 2009 to 2016")
+        paste0( "From 2009 to 2014")
     })
     
     output$hist1<-renderPlotly({
